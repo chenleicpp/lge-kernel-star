@@ -105,6 +105,21 @@
 #define CBC_REQUEST_TIME_CRITICAL 480000 // ms
 #define GAUGE_FOLLOW_TIME	120 // second
 
+#if defined(CONFIG_STAR_BATTERY_UNIT_UV)
+#define STAR_VOLT_UNIT 1000
+#else
+#define STAR_VOLT_UNIT 1
+#endif
+
+#if 0
+#define STAR_TEMPERATURE_CRITICAL_OVERHEAT	550
+#define STAR_TEMPERATURE_OVERHEAT		520
+#define STAR_TEMPERATURE_TO_USB_500	450
+#else
+#define STAR_TEMPERATURE_CRITICAL_OVERHEAT	460
+#define STAR_TEMPERATURE_OVERHEAT	450
+#define STAR_TEMPERATURE_TO_USB_500	400
+#endif
 typedef enum {
 	NvCharger_Type_Battery = 0,
 	NvCharger_Type_USB,
@@ -1113,7 +1128,7 @@ static ssize_t tegra_battery_store_property(
 
 static struct device_attribute tegra_battery_attr = {
 	.attr = { .name = "bat_gauge", .mode = S_IRUGO | S_IWUGO,
-			  .owner = THIS_MODULE },
+			  /*.owner = THIS_MODULE */ },
 	.show = tegra_battery_show_property,
 	.store = tegra_battery_store_property,
 };
@@ -1216,7 +1231,7 @@ static ssize_t star_cbc_store_property(
 
 static struct device_attribute star_cbc_attr = {
 	.attr = { .name = "true_gauge", .mode = S_IRUGO | S_IWUGO,
-			  .owner = THIS_MODULE },
+			  /* .owner = THIS_MODULE */ },
 	.show = star_cbc_show_property,
 	.store = star_cbc_store_property,
 };
@@ -1267,7 +1282,7 @@ static ssize_t star_debug_store_property(
 
 static struct device_attribute star_debug_attr = {
 	.attr = { .name = "dbatt", .mode = S_IRUGO | S_IWUGO,
-			  .owner = THIS_MODULE },
+			  /* .owner = THIS_MODULE */ },
 	.show = star_debug_show_property,
 	.store = star_debug_store_property,
 };
@@ -1325,7 +1340,7 @@ static ssize_t star_cbcdc_store_property(
 
 static struct device_attribute star_cbcdc_attr = {
 	.attr = { .name = "cbc_dc", .mode = S_IRUGO | S_IWUGO,
-			  .owner = THIS_MODULE },
+			  /* .owner = THIS_MODULE */},
 	.show = star_cbcdc_show_property,
 	.store = star_cbcdc_store_property,
 };
@@ -2111,7 +2126,7 @@ static ssize_t star_at_charge_store_property(
 
 static struct device_attribute star_at_charge_attr = {
 	.attr = { .name = "at_charge", .mode = S_IRUGO | S_IWUGO,
-			  .owner = THIS_MODULE },
+			  /* .owner = THIS_MODULE */ },
 	.show = star_at_charge_show_property,
 	.store = star_at_charge_store_property,
 };
@@ -2176,7 +2191,7 @@ static ssize_t star_at_chcomp_store_property(
 
 static struct device_attribute star_at_chcomp_attr = {
 	.attr = { .name = "at_chcomp", .mode = S_IRUGO | S_IWUGO,
-			  .owner = THIS_MODULE },
+			  /* .owner = THIS_MODULE */ },
 	.show = star_at_chcomp_show_property,
 	.store = star_at_chcomp_store_property,
 };
@@ -2193,7 +2208,7 @@ static void charger_control_with_battery_temp(void)
 		{
 			case POWER_SUPPLY_HEALTH_GOOD:
 			{
-				if (batt_dev->batt_temp >= 550)
+				if (batt_dev->batt_temp >= STAR_TEMPERATURE_CRITICAL_OVERHEAT)
 				{
 					// Deactivate Charger : Battery Critical Overheat
 					batt_dev->batt_health = POWER_SUPPLY_HEALTH_CRITICAL_OVERHEAT;
@@ -2205,7 +2220,7 @@ static void charger_control_with_battery_temp(void)
 						batt_dev->charger_state_machine = CHARGER_STATE_SHUTDOWN;
 					}
 				}
-				else if ((batt_dev->batt_temp >= 450) && (batt_dev->batt_temp < 550))
+				else if (batt_dev->batt_temp >= STAR_TEMPERATURE_TO_USB_500)
 				{
 					// Change Charger Setting : Battery Overheat, USB_500 mode
 					batt_dev->batt_health = POWER_SUPPLY_HEALTH_OVERHEAT;
@@ -2243,7 +2258,7 @@ static void charger_control_with_battery_temp(void)
 
 			case POWER_SUPPLY_HEALTH_OVERHEAT:
 			{
-				if (batt_dev->batt_temp >= 550)
+				if (batt_dev->batt_temp >= STAR_TEMPERATURE_CRITICAL_OVERHEAT)
 				{
 					// Deactivate Charger : Battery Critical Overheat
 					batt_dev->batt_health = POWER_SUPPLY_HEALTH_CRITICAL_OVERHEAT;
@@ -2280,7 +2295,7 @@ static void charger_control_with_battery_temp(void)
 
 			case POWER_SUPPLY_HEALTH_CRITICAL_OVERHEAT:
 			{
-				if (batt_dev->batt_temp <= 520)
+				if (batt_dev->batt_temp <= STAR_TEMPERATURE_OVERHEAT)
 				{
 					if ( charging_ic->status != CHG_IC_DEACTIVE_MODE )
 					{
@@ -2596,9 +2611,14 @@ static void star_battery_id_poll_work(struct work_struct *work)
 }
 //20100917, , Battery ID polling function [END]
 
+static int power_supply_change_notification_disabled = 0;
 static void star_battery_data_onetime_update(NvU8 update_option)
 {
 	//LDB("[bat_poll] OneTime_Update(%d)", update_option);
+	if (power_supply_change_notification_disabled) {
+		printk(KERN_INFO "[CHARGER] power supply change notification disabled\n");
+		return;
+	}
 
 	switch ((OneTime_Update)update_option)
 	{
@@ -2643,7 +2663,19 @@ static void star_battery_data_onetime_update(NvU8 update_option)
 	}
 	star_debug_show_battery_status();
 }
-	
+void disable_power_supply_change_notification(void)
+{
+	printk(KERN_INFO "[CHARGER] disabling power supply change notification\n");
+	power_supply_change_notification_disabled = 1;
+}
+EXPORT_SYMBOL(disable_power_supply_change_notification);
+
+void enable_power_supply_change_notification(void)
+{
+	printk(KERN_INFO "[CHARGER] enabling power supply change notification\n");
+	power_supply_change_notification_disabled = 0;
+}
+EXPORT_SYMBOL(enable_power_supply_change_notification);
 /*
 static void star_battery_charge_done_work(struct work_struct *work)
 {
